@@ -11,8 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 type Client struct {
@@ -29,6 +27,31 @@ func NewClient(baseURL string, httpCli *http.Client) (*Client, error) {
 	return cli, nil
 }
 
+type Error struct {
+	Err      error
+	Msg      string
+	Response *http.Response
+}
+
+func (e *Error) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s: %+v", e.Msg, e.Err)
+}
+
+func (e *Error) Unwrap() error {
+	return e.Err
+}
+
+func wrapError(err error, resp *http.Response, format string, args ...any) *Error {
+	return &Error{
+		Err:      err,
+		Msg:      fmt.Sprintf(format, args...),
+		Response: resp,
+	}
+}
+
 func (c *Client) doReq(ctx context.Context, path, method string, body any, expectedStatus int, result any) error {
 	var (
 		b   io.Reader
@@ -37,36 +60,36 @@ func (c *Client) doReq(ctx context.Context, path, method string, body any, expec
 	if body != nil {
 		buf := bytes.NewBuffer(nil)
 		if err = json.NewEncoder(buf).Encode(body); err != nil {
-			return errors.WithMessage(err, "failed to encode body")
+			return wrapError(err, nil, "failed to encode body")
 		}
 		b = buf
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("%s/sdapi/v1%s", c.baseURL, path), b)
 	if err != nil {
-		return errors.WithMessage(err, "failed to init request")
+		return wrapError(err, nil, "failed to initialize request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.cli.Do(req)
 	if err != nil {
-		return errors.WithMessage(err, "failed to do request")
+		return wrapError(err, nil, "failed to do request")
 	}
 
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return errors.WithMessage(err, "failed to read response")
+		return wrapError(err, resp, "failed to read response body")
 	}
 
 	if resp.StatusCode != expectedStatus {
-		return errors.Errorf("got bad status %d: %s", resp.StatusCode, string(data))
+		return wrapError(nil, resp, "got bad status %d, body: %s", resp.StatusCode, string(data))
 	}
 
 	if err := json.Unmarshal(data, result); err != nil {
-		return errors.WithMessage(err, "failed to parse response")
+		return wrapError(err, resp, "failed to parse response")
 	}
 
 	return nil
