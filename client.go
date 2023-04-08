@@ -14,11 +14,13 @@ import (
 )
 
 type Client struct {
-	cli     *http.Client
-	baseURL string
+	cli                *http.Client
+	baseURL            string
+	username, password string
 }
 
-func NewClient(baseURL string, httpCli *http.Client) (*Client, error) {
+// NewClient creates the API client, leave username and password empty if not set.
+func NewClient(baseURL, username, password string, httpCli *http.Client) (*Client, error) {
 	if len(baseURL) == 0 {
 		baseURL = "http://127.0.0.1:7860"
 	}
@@ -74,6 +76,10 @@ func (c *Client) doReq(ctx context.Context, path, method string, body any, expec
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	// If any.
+	if len(c.username) != 0 && len(c.password) != 0 {
+		req.SetBasicAuth(c.username, c.password)
+	}
 
 	resp, err := c.cli.Do(req)
 	if err != nil {
